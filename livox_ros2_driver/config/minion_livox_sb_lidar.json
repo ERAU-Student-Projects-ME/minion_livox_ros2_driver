@@ -1,21 +1,12 @@
 {
     "lidar_config": [
         {
-            "broadcast_code": "1HDDGC500102611",
+            "broadcast_code": "1HDDH3200106291",
             "enable_connect": true,
             "enable_fan": true,
-            "return_mode": 0,
+            "return_mode": 1,
             "coordinate": 0,
-            "imu_rate": 1,
-            "extrinsic_parameter_source": 0
-        },
-        {
-            "broadcast_code": "0TFDG3U99101431",
-            "enable_connect": true,
-            "enable_fan": true,
-            "return_mode": 0,
-            "coordinate": 0,
-            "imu_rate": 1,
+            "imu_rate": 0,
             "extrinsic_parameter_source": 0
         }
     ],
