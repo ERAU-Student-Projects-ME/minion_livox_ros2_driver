@@ -1,0 +1,12 @@
+/lidar_deskew_node:
+  ros__parameters:
+      lidar_topic: "/livox/lidar"
+      lidar_qos_reliability: "best_effort"
+      lidar_qos_depth: 10
+      gps_topic: "/gps/odometry"
+      gps_qos_reliability: "best_effort"
+      gps_qos_depth: 10
+      odom_buffer_size: 500
+      reference_point: "first"
+      publish_raw: true
+        

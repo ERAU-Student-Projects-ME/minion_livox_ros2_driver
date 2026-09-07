@@ -28,6 +28,17 @@
 #include <math.h>
 #include <stdint.h>
 
+/**
+ * The LiDAR's PTP-disciplined hardware clock reports time in TAI (as all
+ * PTP hardware clocks natively do), but ROS/rclcpp::Time expects UTC
+ * (Unix epoch) nanoseconds. The raw device timestamp must have the
+ * current TAI-UTC leap-second offset subtracted before being used as a
+ * ROS header stamp, or every published timestamp will be off by that
+ * many seconds (37 as of the last leap second, inserted 2017-01-01;
+ * update this if a new leap second is ever announced by the IERS).
+ */
+static constexpr uint64_t kTaiUtcOffsetNs = 37ULL * 1000000000ULL;
+
 #include <rclcpp/rclcpp.hpp>
 #include <pcl_conversions/pcl_conversions.h>
 #include <sensor_msgs/msg/point_cloud2.hpp>
@@ -177,7 +188,7 @@ uint32_t Lddc::PublishPointcloud2(LidarDataQueue *queue, uint32_t packet_num,
     }
     /** Use the first packet timestamp as pointcloud2 msg timestamp */
     if (!published_packet) {
-      cloud.header.stamp = rclcpp::Time(timestamp);
+      cloud.header.stamp = rclcpp::Time(timestamp - kTaiUtcOffsetNs);
     }
     uint32_t single_point_num = storage_packet.point_num * echo_num;
 
@@ -284,7 +295,7 @@ uint32_t Lddc::PublishPointcloudData(LidarDataQueue *queue, uint32_t packet_num,
       }
     }
     if (!published_packet) {
-      cloud.header.stamp = timestamp / 1000.0;  // to pcl ros time stamp
+      cloud.header.stamp = (timestamp - kTaiUtcOffsetNs) / 1000.0;  // to pcl ros time stamp
     }
     uint32_t single_point_num = storage_packet.point_num * echo_num;
 
@@ -406,12 +417,12 @@ uint32_t Lddc::PublishCustomPointcloud(LidarDataQueue *queue,
     }
     /** first packet */
     if (!published_packet) {
-      livox_msg.timebase = timestamp;
+      livox_msg.timebase = timestamp - kTaiUtcOffsetNs;
       packet_offset_time = 0;
       /** convert to ros time stamp */
-      livox_msg.header.stamp = rclcpp::Time(timestamp);
+      livox_msg.header.stamp = rclcpp::Time(timestamp - kTaiUtcOffsetNs);
     } else {
-      packet_offset_time = (uint32_t)(timestamp - livox_msg.timebase);
+      packet_offset_time = (uint32_t)(timestamp - kTaiUtcOffsetNs - livox_msg.timebase);
     }
     uint32_t single_point_num = storage_packet.point_num * echo_num;
 
@@ -482,7 +493,7 @@ uint32_t Lddc::PublishImuData(LidarDataQueue *queue, uint32_t packet_num,
   timestamp = GetStoragePacketTimestamp(&storage_packet, data_source);
   if (timestamp) {
     imu_data.header.stamp =
-        rclcpp::Time(timestamp);  // to ros time stamp
+        rclcpp::Time(timestamp - kTaiUtcOffsetNs);  // to ros time stamp
   }
 
   uint8_t point_buf[2048];
@@ -581,29 +592,38 @@ void Lddc::DistributeLidarData(void) {
 
 std::shared_ptr<rclcpp::PublisherBase> Lddc::CreatePublisher(uint8_t msg_type,
     std::string &topic_name, uint32_t queue_size) {
+    /**
+     * Use sensor-data QoS (BEST_EFFORT, VOLATILE) instead of the default
+     * RELIABLE that create_publisher() implicitly applies when given a
+     * plain integer depth. This matches the QoS convention used by most
+     * ROS2 sensor drivers and avoids QoS-compatibility mismatches with
+     * subscribers that expect qos_profile_sensor_data (e.g. rviz2,
+     * message_filters consumers, etc.).
+     */
+    auto sensor_qos = rclcpp::SensorDataQoS().keep_last(queue_size);
     if (kPointCloud2Msg == msg_type) {
       RCLCPP_INFO(cur_node_->get_logger(),
           "%s publish use PointCloud2 format", topic_name.c_str());
       return cur_node_->create_publisher<
-          sensor_msgs::msg::PointCloud2>(topic_name, queue_size);
+          sensor_msgs::msg::PointCloud2>(topic_name, sensor_qos);
     } else if (kLivoxCustomMsg == msg_type) {
       RCLCPP_INFO(cur_node_->get_logger(),
           "%s publish use livox custom format", topic_name.c_str());
       return cur_node_->create_publisher<
-          livox_interfaces::msg::CustomMsg>(topic_name, queue_size);
+          livox_interfaces::msg::CustomMsg>(topic_name, sensor_qos);
     }
 #if 0
     else if (kPclPxyziMsg == msg_type)  {
       RCLCPP_INFO(cur_node_->get_logger(),
           "%s publish use pcl PointXYZI format", topic_name.c_str());
-      return cur_node_->create_publisher<PointCloud>(topic_name, queue_size);
+      return cur_node_->create_publisher<PointCloud>(topic_name, sensor_qos);
     }
 #endif    
     else if (kLivoxImuMsg == msg_type)  {
       RCLCPP_INFO(cur_node_->get_logger(),
           "%s publish use imu format", topic_name.c_str());
       return cur_node_->create_publisher<sensor_msgs::msg::Imu>(topic_name,
-          queue_size);
+          sensor_qos);
     } else {
       std::shared_ptr<rclcpp::PublisherBase>null_publisher(nullptr);
       return null_publisher;

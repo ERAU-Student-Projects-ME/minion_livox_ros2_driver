@@ -30,6 +30,7 @@ find_package(ament_cmake_auto REQUIRED)
 ament_auto_find_build_dependencies()
 find_package(PCL REQUIRED)
 find_package(livox_sdk REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 # check apr
 find_package(PkgConfig)
@@ -98,6 +99,12 @@ rclcpp_components_register_node(${PROJECT_NAME}
   PLUGIN "livox_ros::LivoxDriver"
   EXECUTABLE ${PROJECT_NAME}_node
 )
+
+ament_auto_add_executable(lidar_deskew_node
+  src/lidar_deskew_node.cpp
+)
+target_include_directories(lidar_deskew_node PUBLIC ${EIGEN3_INCLUDE_DIR})
+
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
